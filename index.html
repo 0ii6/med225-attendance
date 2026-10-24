@@ -970,6 +970,7 @@ async function computeStats() {
     return {
       label: l.title,
       date: l.createdAt,
+      count: count,
       rate: roster.length ? Math.round((count / roster.length) * 100) : 0
     };
   });
@@ -1072,13 +1073,17 @@ async function renderStatisticsTab() {
     const ctx = document.getElementById("trendChart");
     if (statsChart) { statsChart.destroy(); statsChart = null; }
     if (trend.length) {
+      const rosterSize = roster.length;
       statsChart = new Chart(ctx, {
         type: "line",
         data: {
-          labels: trend.map(t => t.label),
+          labels: trend.map(t => [
+            t.date ? new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "",
+            t.label
+          ]),
           datasets: [{
-            label: "Attendance %",
-            data: trend.map(t => t.rate),
+            label: "Students present",
+            data: trend.map(t => t.count),
             borderColor: "#111111",
             backgroundColor: "rgba(17,17,17,0.08)",
             pointBackgroundColor: "#111111",
@@ -1089,7 +1094,7 @@ async function renderStatisticsTab() {
         options: {
           responsive: true,
           plugins: { legend: { display: false } },
-          scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } } }
+          scales: { y: { min: 0, max: rosterSize || undefined, ticks: { precision: 0 } } }
         }
       });
     } else {
