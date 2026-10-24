@@ -10,8 +10,6 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"
-  onerror="this.onerror=null; var s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js'; document.head.appendChild(s);"></script>
 
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
@@ -170,7 +168,7 @@ function setFavicon(emoji) {
   link.href = "data:image/svg+xml," + encodeURIComponent(svg);
   document.head.appendChild(link);
 }
-setFavicon("⚬");
+setFavicon("📱");
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -927,7 +925,65 @@ async function showAttendanceInline(panel, lectureId, title) {
 
 let statsSubject = "All";
 let statsBlock = "All";
-let statsChart = null;
+
+/* A small hand-built line chart, plain SVG, no external library. Built
+   after Chart.js repeatedly failed to load for reasons outside the app's
+   control (likely something blocking external script requests). */
+function renderTrendSVG(trend, rosterSize) {
+  if (!trend.length) {
+    return `<p class="muted-small">No lectures yet for this filter.</p>`;
+  }
+
+  const w = Math.max(600, trend.length * 90);
+  const h = 260;
+  const padL = 46, padR = 20, padT = 16, padB = 68;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  const maxY = Math.max(rosterSize || 0, ...trend.map(t => t.count), 1);
+
+  const stepX = trend.length > 1 ? plotW / (trend.length - 1) : 0;
+  const points = trend.map((t, i) => ({
+    x: padL + (trend.length > 1 ? i * stepX : plotW / 2),
+    y: padT + plotH - (t.count / maxY) * plotH,
+    t
+  }));
+
+  const linePath = points.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + "," + p.y.toFixed(1)).join(" ");
+  const bottomY = (padT + plotH).toFixed(1);
+  const areaPath = `${linePath} L${points[points.length - 1].x.toFixed(1)},${bottomY} L${points[0].x.toFixed(1)},${bottomY} Z`;
+
+  let gridLines = "";
+  const ySteps = 4;
+  for (let i = 0; i <= ySteps; i++) {
+    const val = Math.round((maxY / ySteps) * i);
+    const y = padT + plotH - (val / maxY) * plotH;
+    gridLines += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - padR}" y2="${y.toFixed(1)}" stroke="#E6E6E6" stroke-width="1"/>`;
+    gridLines += `<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" font-size="11" fill="#8A8A8A" text-anchor="end">${val}</text>`;
+  }
+
+  let labels = "";
+  let dots = "";
+  points.forEach(p => {
+    const dateStr = p.t.date ? new Date(p.t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+    let title = p.t.label || "";
+    if (title.length > 14) title = title.slice(0, 13) + "…";
+    labels += `<text x="${p.x.toFixed(1)}" y="${h - 44}" font-size="12" font-weight="600" fill="#111111" text-anchor="middle">${escapeHtml(dateStr)}</text>`;
+    labels += `<text x="${p.x.toFixed(1)}" y="${h - 28}" font-size="11" fill="#8A8A8A" text-anchor="middle">${escapeHtml(title)}</text>`;
+    dots += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="#111111"/>`;
+  });
+
+  return `
+    <div style="overflow-x:auto;">
+      <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block; font-family:Inter, sans-serif;">
+        ${gridLines}
+        <path d="${areaPath}" fill="rgba(17,17,17,0.08)" stroke="none"/>
+        <path d="${linePath}" fill="none" stroke="#111111" stroke-width="2"/>
+        ${dots}
+        ${labels}
+      </svg>
+    </div>
+  `;
+}
 
 async function computeStats() {
   // Forced to read straight from the server, not the local offline cache,
@@ -1034,7 +1090,7 @@ async function renderStatisticsTab() {
 
     <div class="card">
       <h2>Attendance over time</h2>
-      <canvas id="trendChart" height="140"></canvas>
+      <div id="trendChart"></div>
     </div>
 
     <div class="card">
@@ -1066,43 +1122,10 @@ async function renderStatisticsTab() {
   }
 
   try {
-    if (typeof Chart === "undefined") {
-      throw new Error("Chart.js did not load");
-    }
-
-    const ctx = document.getElementById("trendChart");
-    if (statsChart) { statsChart.destroy(); statsChart = null; }
-    if (trend.length) {
-      const rosterSize = roster.length;
-      statsChart = new Chart(ctx, {
-        type: "line",
-        data: {
-          labels: trend.map(t => [
-            t.date ? new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "",
-            t.label
-          ]),
-          datasets: [{
-            label: "Students present",
-            data: trend.map(t => t.count),
-            borderColor: "#111111",
-            backgroundColor: "rgba(17,17,17,0.08)",
-            pointBackgroundColor: "#111111",
-            tension: 0.25,
-            fill: true
-          }]
-        },
-        options: {
-          responsive: true,
-          plugins: { legend: { display: false } },
-          scales: { y: { min: 0, max: rosterSize || undefined, ticks: { precision: 0 } } }
-        }
-      });
-    } else {
-      ctx.replaceWith(Object.assign(document.createElement("p"), { className: "muted-small", textContent: "No lectures yet for this filter." }));
-    }
+    document.getElementById("trendChart").innerHTML = renderTrendSVG(trend, roster.length);
   } catch (e) {
     document.getElementById("trendChart").closest(".card").innerHTML =
-      `<h2>Attendance over time</h2><p class="status err">Couldn't draw the chart (the chart library may not have loaded). Try reloading the page.</p>`;
+      `<h2>Attendance over time</h2><p class="status err">Couldn't draw the chart. Try reloading the page.</p>`;
   }
 
   try {
