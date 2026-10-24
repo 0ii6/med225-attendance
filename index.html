@@ -102,6 +102,7 @@ db.enablePersistence().catch((err) => {
 });
 
 const LAST_BLOCK_KEY = "last_block_v1"; // remembers the block so you only type it once per block
+const ACTIVE_LECTURE_KEY = "active_lecture_v1"; // which lecture, if any, is currently live on this device
 const TOKEN_REFRESH_MS = 30000;
 const TOKEN_VALID_MS = 37000;
 
@@ -461,8 +462,12 @@ function switchTab(tab) {
 async function renderRunTab() {
   const body = document.getElementById("tabBody");
   const savedBlock = localStorage.getItem(LAST_BLOCK_KEY) || "";
+
+  let active = null;
+  try { active = JSON.parse(localStorage.getItem(ACTIVE_LECTURE_KEY) || "null"); } catch (e) { active = null; }
+
   body.innerHTML = `
-    <div class="card">
+    <div class="card" id="startFormCard" style="display:${active ? "none" : "block"};">
       <label for="blockInput">Block</label>
       <input type="text" id="blockInput" list="blockOptions" placeholder="e.g. Block 4" value="${escapeAttr(savedBlock)}">
       <datalist id="blockOptions"></datalist>
@@ -492,6 +497,10 @@ async function renderRunTab() {
     <div class="card" id="attCard" style="display:none;">
       <div id="attBody"></div>
     </div>
+
+    <div class="card" id="endCard" style="display:none;">
+      <button id="endLectureBtn" class="ghost">End this lecture</button>
+    </div>
   `;
 
   // Populate subject and block autocomplete from past lectures
@@ -510,44 +519,67 @@ async function renderRunTab() {
       [...blocks].map(b => `<option value="${escapeAttr(b)}">`).join("");
   } catch (e) {}
 
+  document.getElementById("endLectureBtn").onclick = () => {
+    if (!confirm("End this lecture? Students won't be able to check in anymore, but everything recorded so far stays saved.")) return;
+    if (runTimer) clearInterval(runTimer);
+    if (countdownTimer) clearInterval(countdownTimer);
+    if (runUnsub) runUnsub();
+    localStorage.removeItem(ACTIVE_LECTURE_KEY);
+    renderRunTab();
+  };
+
   document.getElementById("startBtn").onclick = async () => {
     const block = document.getElementById("blockInput").value.trim();
     const subject = document.getElementById("subjectInput").value.trim();
     const title = document.getElementById("titleInput").value.trim();
     if (!block || !subject || !title) { alert("Fill in the block, the subject, and the title."); return; }
 
-    const hostName = currentName;
     let lectureRef;
     try {
       lectureRef = db.collection("lectures").doc();
-      await lectureRef.set({ block, subject, title, hostName, createdAt: Date.now() });
+      await lectureRef.set({ block, subject, title, hostName: currentName, createdAt: Date.now() });
     } catch (e) {
       alert("Couldn't start the lecture. Check your connection.");
       return;
     }
-    currentLectureId = lectureRef.id;
     localStorage.setItem(LAST_BLOCK_KEY, block);
     logAudit("Started lecture", `"${title}" (${subject}, ${block})`);
 
-    document.getElementById("qrCard").style.display = "block";
-    document.getElementById("countCard").style.display = "block";
-
-    const qrBox = document.getElementById("qrcode");
-    qrBox.innerHTML = "";
-    new QRCode(qrBox, { text: location.origin + location.pathname, width: 170, height: 170 });
-
-    if (runTimer) clearInterval(runTimer);
-    pushNewCode(currentLectureId, subject, title);
-    runTimer = setInterval(() => pushNewCode(currentLectureId, subject, title), TOKEN_REFRESH_MS);
-
-    if (countdownTimer) clearInterval(countdownTimer);
-    countdownTimer = setInterval(updateCountdown, 1000);
-
-    if (runUnsub) runUnsub();
-    runUnsub = watchCount(currentLectureId);
-
-    document.getElementById("viewAttBtn").onclick = () => showAttendance(currentLectureId, title);
+    localStorage.setItem(ACTIVE_LECTURE_KEY, JSON.stringify({ lectureId: lectureRef.id, subject, title, block }));
+    document.getElementById("startFormCard").style.display = "none";
+    beginLiveSession(lectureRef.id, subject, title);
   };
+
+  // A lecture was already running when this tab was opened (you navigated
+  // away and came back, or reloaded the page), pick it back up instead of
+  // asking you to start over.
+  if (active) {
+    beginLiveSession(active.lectureId, active.subject, active.title);
+  }
+}
+
+function beginLiveSession(lectureId, subject, title) {
+  currentLectureId = lectureId;
+
+  document.getElementById("qrCard").style.display = "block";
+  document.getElementById("countCard").style.display = "block";
+  document.getElementById("endCard").style.display = "block";
+
+  const qrBox = document.getElementById("qrcode");
+  qrBox.innerHTML = "";
+  new QRCode(qrBox, { text: location.origin + location.pathname, width: 170, height: 170 });
+
+  if (runTimer) clearInterval(runTimer);
+  pushNewCode(lectureId, subject, title);
+  runTimer = setInterval(() => pushNewCode(lectureId, subject, title), TOKEN_REFRESH_MS);
+
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer = setInterval(updateCountdown, 1000);
+
+  if (runUnsub) runUnsub();
+  runUnsub = watchCount(lectureId);
+
+  document.getElementById("viewAttBtn").onclick = () => showAttendance(lectureId, title);
 }
 
 /* Tick-box manual attendance, built from the absent list that's already
@@ -672,7 +704,7 @@ function updateCountdown() {
   const el = document.getElementById("tickInfo");
   if (!el || !codeIssuedAt) return;
   const remaining = Math.max(0, Math.ceil((codeIssuedAt + TOKEN_REFRESH_MS - Date.now()) / 1000));
-  el.textContent = "Refreshes in " + remaining + "s, quick quick quick quick";
+  el.textContent = "Refreshes in " + remaining + "s, quick! the early bird gets recorded for attendance";
 }
 
 /* ---------------- Shared attendance view ---------------- */
