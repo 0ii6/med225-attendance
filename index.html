@@ -373,6 +373,7 @@ let activeTab = "run";
 let runTimer = null;
 let runUnsub = null;
 let countdownTimer = null;
+let attendanceUnsub = null;
 let currentLectureId = null;
 let codeIssuedAt = null;
 
@@ -432,6 +433,7 @@ function renderDashboard() {
     if (runTimer) clearInterval(runTimer);
     if (countdownTimer) clearInterval(countdownTimer);
     if (runUnsub) runUnsub();
+    if (attendanceUnsub) attendanceUnsub();
     await auth.signOut();
   };
 
@@ -524,6 +526,7 @@ async function renderRunTab() {
     if (runTimer) clearInterval(runTimer);
     if (countdownTimer) clearInterval(countdownTimer);
     if (runUnsub) runUnsub();
+    if (attendanceUnsub) attendanceUnsub();
     localStorage.removeItem(ACTIVE_LECTURE_KEY);
     renderRunTab();
   };
@@ -578,6 +581,9 @@ function beginLiveSession(lectureId, subject, title) {
 
   if (runUnsub) runUnsub();
   runUnsub = watchCount(lectureId);
+
+  if (attendanceUnsub) { attendanceUnsub(); attendanceUnsub = null; }
+  document.getElementById("attCard").style.display = "none";
 
   document.getElementById("viewAttBtn").onclick = () => showAttendance(lectureId, title);
 }
@@ -704,7 +710,7 @@ function updateCountdown() {
   const el = document.getElementById("tickInfo");
   if (!el || !codeIssuedAt) return;
   const remaining = Math.max(0, Math.ceil((codeIssuedAt + TOKEN_REFRESH_MS - Date.now()) / 1000));
-  el.textContent = "Refreshes in " + remaining + "s, quick! the early bird gets recorded for attendance";
+  el.textContent = "Refreshes in " + remaining + "s";
 }
 
 /* ---------------- Shared attendance view ---------------- */
@@ -715,48 +721,65 @@ async function showAttendance(lectureId, title) {
   card.style.display = "block";
   body.innerHTML = "<p>Loading…</p>";
 
-  let rosterSnap, attSnap;
+  if (attendanceUnsub) { attendanceUnsub(); attendanceUnsub = null; }
+
+  let rosterSnap;
   try {
-    [rosterSnap, attSnap] = await Promise.all([
-      db.collection("roster").get(),
-      db.collection("attendance").where("lectureId", "==", lectureId).get()
-    ]);
+    rosterSnap = await db.collection("roster").get();
   } catch (e) {
     body.innerHTML = `<p class="status err">Couldn't load this. Try again.</p>`;
     return;
   }
 
-  const presentIds = new Set();
-  const presentList = [];
-  attSnap.forEach(d => {
-    const data = d.data();
-    presentIds.add(data.studentId);
-    presentList.push({ id: data.studentId, name: data.name, timestamp: data.timestamp, manual: data.manual });
-  });
+  const renderList = (attSnap) => {
+    const presentIds = new Set();
+    const presentList = [];
+    attSnap.forEach(d => {
+      const data = d.data();
+      presentIds.add(data.studentId);
+      presentList.push({ id: data.studentId, name: data.name, timestamp: data.timestamp, manual: data.manual });
+    });
 
-  const absentList = [];
-  rosterSnap.forEach(d => {
-    if (!presentIds.has(d.id)) absentList.push({ id: d.id, name: (d.data() || {}).name || "" });
-  });
+    const absentList = [];
+    rosterSnap.forEach(d => {
+      if (!presentIds.has(d.id)) absentList.push({ id: d.id, name: (d.data() || {}).name || "" });
+    });
 
-  presentList.sort((a, b) => a.name.localeCompare(b.name));
-  absentList.sort((a, b) => a.name.localeCompare(b.name));
-  updateRing(presentList.length, rosterSnap.size || 1);
+    presentList.sort((a, b) => a.name.localeCompare(b.name));
+    absentList.sort((a, b) => a.name.localeCompare(b.name));
+    updateRing(presentList.length, rosterSnap.size || 1);
 
-  const presentRows = presentList.length
-    ? presentList.map(s => `<div class="present-row" style="padding:8px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between;">
-        <span>${escapeHtml(s.name)} <span class="muted-small">(${escapeHtml(s.id)})</span>${s.manual ? '<span class="pill">marked by hand</span>' : ''}</span>
-        <span class="muted-small">${s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : ""}</span>
-      </div>`).join("")
-    : `<p class="muted-small">No one's checked in yet.</p>`;
+    const presentRows = presentList.length
+      ? presentList.map(s => `<div class="present-row" style="padding:8px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between;">
+          <span>${escapeHtml(s.name)} <span class="muted-small">(${escapeHtml(s.id)})</span>${s.manual ? '<span class="pill">marked by hand</span>' : ''}</span>
+          <span class="muted-small">${s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : ""}</span>
+        </div>`).join("")
+      : `<p class="muted-small">No one's checked in yet.</p>`;
 
-  body.innerHTML = `
-    <p class="sub" style="margin-bottom:16px;">${escapeHtml(title)}: ${presentList.length} here, ${absentList.length} absent</p>
-    <h2>Here (${presentList.length})</h2>
-    ${presentRows}
-    ${renderAbsentSection(absentList, 18)}
-  `;
-  wireManualSection(body, lectureId, title, () => showAttendance(lectureId, title));
+    // Keep whatever's currently typed in the filter box instead of
+    // wiping it out every time a new check-in comes in live.
+    const existingFilter = body.querySelector(".manual-filter");
+    const filterValue = existingFilter ? existingFilter.value : "";
+
+    body.innerHTML = `
+      <p class="sub" style="margin-bottom:16px;">${escapeHtml(title)}: ${presentList.length} here, ${absentList.length} absent</p>
+      <h2>Here (${presentList.length})</h2>
+      ${presentRows}
+      ${renderAbsentSection(absentList, 18)}
+    `;
+    wireManualSection(body, lectureId, title, null);
+
+    const newFilter = body.querySelector(".manual-filter");
+    if (newFilter && filterValue) {
+      newFilter.value = filterValue;
+      newFilter.dispatchEvent(new Event("input"));
+    }
+  };
+
+  attendanceUnsub = db.collection("attendance").where("lectureId", "==", lectureId)
+    .onSnapshot(renderList, (err) => {
+      console.error("attendance list watch error", err);
+    });
 }
 
 /* ---------------- Tab: Records ---------------- */
