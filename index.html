@@ -672,7 +672,7 @@ function updateCountdown() {
   const el = document.getElementById("tickInfo");
   if (!el || !codeIssuedAt) return;
   const remaining = Math.max(0, Math.ceil((codeIssuedAt + TOKEN_REFRESH_MS - Date.now()) / 1000));
-  el.textContent = "Refreshes in " + remaining + "s";
+  el.textContent = "Refreshes in " + remaining + "s, quick quick quick quick";
 }
 
 /* ---------------- Shared attendance view ---------------- */
