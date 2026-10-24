@@ -336,7 +336,6 @@ function renderLogin() {
   app.classList.remove("wide");
   app.innerHTML = `
     <h1>Staff login</h1>
-    <p class="sub">For class leaders and doctors, with your own account.</p>
     <div class="card">
       <label for="loginEmail">Email</label>
       <input type="text" id="loginEmail" autocomplete="off">
@@ -372,7 +371,9 @@ function renderLogin() {
 let activeTab = "run";
 let runTimer = null;
 let runUnsub = null;
+let countdownTimer = null;
 let currentLectureId = null;
+let codeIssuedAt = null;
 
 function renderDashboard() {
   const app = document.getElementById("app");
@@ -428,6 +429,7 @@ function renderDashboard() {
 
   document.getElementById("logoutBtn").onclick = async () => {
     if (runTimer) clearInterval(runTimer);
+    if (countdownTimer) clearInterval(countdownTimer);
     if (runUnsub) runUnsub();
     await auth.signOut();
   };
@@ -464,7 +466,6 @@ async function renderRunTab() {
       <label for="blockInput">Block</label>
       <input type="text" id="blockInput" list="blockOptions" placeholder="e.g. Block 4" value="${escapeAttr(savedBlock)}">
       <datalist id="blockOptions"></datalist>
-      <p class="muted-small" style="margin-top:-6px; margin-bottom:12px;">Set this once at the start of the block, it'll stay filled in for every lecture after.</p>
       <label for="subjectInput">Subject</label>
       <input type="text" id="subjectInput" list="subjectOptions" placeholder="e.g. Embryology">
       <datalist id="subjectOptions"></datalist>
@@ -476,7 +477,7 @@ async function renderRunTab() {
     <div class="row-2">
       <div class="card" id="qrCard" style="display:none;">
         <div class="big-code" id="bigCode">······</div>
-        <p class="muted-small" id="tickInfo" style="text-align:center; margin-top:10px;">Refreshes every 30 seconds.</p>
+        <p class="muted-small" id="tickInfo" style="text-align:center; margin-top:10px;"></p>
         <div id="qr-box" style="margin-top:14px;"><div id="qrcode"></div></div>
       </div>
 
@@ -539,6 +540,9 @@ async function renderRunTab() {
     pushNewCode(currentLectureId, subject, title);
     runTimer = setInterval(() => pushNewCode(currentLectureId, subject, title), TOKEN_REFRESH_MS);
 
+    if (countdownTimer) clearInterval(countdownTimer);
+    countdownTimer = setInterval(updateCountdown, 1000);
+
     if (runUnsub) runUnsub();
     runUnsub = watchCount(currentLectureId);
 
@@ -556,7 +560,6 @@ function renderAbsentSection(absentList, headingSize) {
   }
   return `
     <h2 style="${hStyle}">Absent (${absentList.length})</h2>
-    <p class="muted-small" style="margin-top:-6px; margin-bottom:10px;">Tick anyone who should be marked present, for example a late submission, then save.</p>
     <input type="text" class="manual-filter" placeholder="Filter the list…">
     <div class="manual-block">
       <div class="manual-list" style="max-height:320px; overflow-y:auto; margin:10px 0;">
@@ -659,10 +662,17 @@ async function pushNewCode(lectureId, subject, title) {
     if (el) el.textContent = "Couldn't refresh the code. Check your connection.";
     return;
   }
+  codeIssuedAt = issuedAt;
   const bc = document.getElementById("bigCode");
-  const ti = document.getElementById("tickInfo");
   if (bc) bc.textContent = code;
-  if (ti) ti.textContent = "Updated " + new Date(issuedAt).toLocaleTimeString() + ". Refreshes every 30s";
+  updateCountdown();
+}
+
+function updateCountdown() {
+  const el = document.getElementById("tickInfo");
+  if (!el || !codeIssuedAt) return;
+  const remaining = Math.max(0, Math.ceil((codeIssuedAt + TOKEN_REFRESH_MS - Date.now()) / 1000));
+  el.textContent = "Refreshes in " + remaining + "s";
 }
 
 /* ---------------- Shared attendance view ---------------- */
@@ -1114,13 +1124,11 @@ async function renderStatisticsTab() {
 
     <div class="card">
       <button id="exportBtn" class="secondary">Export everything to Excel</button>
-      <p class="muted-small" style="margin-top:10px;">Every attendance record ever saved, plus a per-student summary, as one Excel file. Not filtered by the choices above, this always exports all of it.</p>
       <div id="exportStatus" class="muted-small"></div>
     </div>
 
     <div class="card">
       <button id="cleanupBtn" class="secondary">Clean up orphaned records</button>
-      <p class="muted-small" style="margin-top:10px;">Removes any attendance record left behind by a lecture that's since been deleted. Safe to run any time, it only touches records with no lecture to belong to.</p>
       <div id="cleanupStatus" class="muted-small"></div>
     </div>
 
@@ -1131,7 +1139,6 @@ async function renderStatisticsTab() {
 
     <div class="card">
       <h2>Per student</h2>
-      <p class="muted-small" style="margin-top:-4px;">Lowest attendance first.</p>
       <div id="statsTable"></div>
     </div>
   `;
@@ -1321,7 +1328,6 @@ async function renderRosterTab() {
       <label for="rosterFile">Upload a file (ID, Name columns)</label>
       <input type="file" id="rosterFile" accept=".xlsx,.xls,.csv">
       <button id="uploadBtn" class="secondary">Replace roster with this file</button>
-      <p class="muted-small" style="margin-top:10px;">This erases whatever's there first, then loads exactly what's in the file, every time, so nothing old is ever left behind.</p>
       <div id="uploadStatus" class="muted-small"></div>
     </div>
   `;
