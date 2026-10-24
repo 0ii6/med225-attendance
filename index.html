@@ -161,14 +161,18 @@ async function logAudit(action, detail) {
   }
 }
 
-function setFavicon(emoji) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="0.9em" font-size="90">${emoji}</text></svg>`;
+function setFavicon(svg) {
   const link = document.createElement("link");
   link.rel = "icon";
   link.href = "data:image/svg+xml," + encodeURIComponent(svg);
   document.head.appendChild(link);
 }
-setFavicon("📱");
+// A plain black-and-white checkmark, drawn by hand, not an emoji, so it
+// renders the same everywhere instead of looking different per platform.
+setFavicon(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="22" fill="#111111"/>
+  <path d="M28 52 L44 68 L74 34" stroke="#FFFFFF" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`);
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -934,7 +938,7 @@ function renderTrendSVG(trend, rosterSize) {
     return `<p class="muted-small">No lectures yet for this filter.</p>`;
   }
 
-  const w = Math.max(600, trend.length * 90);
+  const w = Math.max(600, trend.length * 110);
   const h = 260;
   const padL = 46, padR = 20, padT = 16, padB = 68;
   const plotW = w - padL - padR;
@@ -961,12 +965,22 @@ function renderTrendSVG(trend, rosterSize) {
     gridLines += `<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" font-size="11" fill="#8A8A8A" text-anchor="end">${val}</text>`;
   }
 
+  // If the same date shows up more than once (a few lectures can easily
+  // land on one day), add the time too so each point still reads as its
+  // own distinct lecture instead of looking like a duplicate.
+  const plainDateStrs = points.map(p => p.t.date ? new Date(p.t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "");
+  const dateCounts = {};
+  plainDateStrs.forEach(d => { dateCounts[d] = (dateCounts[d] || 0) + 1; });
+
   const colWidth = trend.length > 1 ? stepX : plotW;
   let labels = "";
   let dots = "";
   let hoverZones = "";
-  points.forEach(p => {
-    const dateStr = p.t.date ? new Date(p.t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+  points.forEach((p, i) => {
+    const plainDate = plainDateStrs[i];
+    const dateStr = dateCounts[plainDate] > 1 && p.t.date
+      ? `${plainDate}, ${new Date(p.t.date).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
+      : plainDate;
     const fullTitle = p.t.label || "";
     const tooltipText = fullTitle ? `${fullTitle}, ${dateStr}, ${p.t.count} present` : dateStr;
 
