@@ -1,0 +1,1442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Attendance</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"
+  onerror="this.onerror=null; var s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js'; document.head.appendChild(s);"></script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg: #FFFFFF; --card: #FAFAFA; --ink: #111111; --muted: #8A8A8A;
+    --border: #E6E6E6; --red: #C13B3B; --red-bg: rgba(193,59,59,0.08);
+    box-sizing: border-box;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+    font-family: Inter, -apple-system, Segoe UI, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 28px 16px 40px;
+  }
+  .wrap { width: 100%; max-width: 480px; }
+  .wrap.wide { max-width: 860px; }
+  h1 { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 26px; margin: 0 0 4px; letter-spacing: -0.3px; }
+  h2 { font-family: 'Fraunces', Georgia, serif; font-weight: 600; font-size: 18px; margin: 0 0 10px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 22px; margin-bottom: 16px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 7px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; }
+  label.manual-row { font-size: 14px; color: var(--ink); font-weight: 400; letter-spacing: normal; text-transform: none; margin-bottom: 0; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  label.manual-row .absent-row { color: var(--red); }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 13px 14px; border-radius: 12px; border: 1px solid var(--border);
+    background: #fff; color: var(--ink); font-size: 16px; margin-bottom: 12px;
+  }
+  input.code-input { text-align: center; font-size: 26px; font-weight: 700; letter-spacing: 5px; text-transform: uppercase; font-family: 'Fraunces', Georgia, serif; }
+  button {
+    width: 100%; padding: 14px; border-radius: 12px; border: none; background: var(--ink);
+    color: white; font-size: 14px; font-weight: 600; cursor: pointer; letter-spacing: 0.2px;
+  }
+  button:active { opacity: 0.8; }
+  button.secondary { background: #fff; color: var(--ink); border: 1px solid var(--border); }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  button.small { width: auto; padding: 8px 14px; font-size: 13px; }
+  #qr-box { display: flex; justify-content: center; padding: 16px; background: white; border-radius: 12px; }
+  .status { padding: 14px; border-radius: 12px; font-size: 14px; font-weight: 600; text-align: center; margin-bottom: 12px; }
+  .status.ok { background: #F0F0EE; color: var(--ink); }
+  .status.err { background: var(--red-bg); color: var(--red); }
+  .status.info { background: #F0F0EE; color: var(--muted); }
+  .count { font-family: 'Fraunces', Georgia, serif; font-size: 40px; font-weight: 600; color: var(--ink); text-align: center; }
+  .count-label { font-size: 13px; color: var(--muted); text-align: center; margin-top: 2px; }
+  .muted-small { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .big-code {
+    font-family: 'Fraunces', Georgia, serif; font-size: 52px; font-weight: 600; letter-spacing: 9px; text-align: center;
+    color: var(--ink); background: #fff; border: 1px solid var(--border); border-radius: 14px; padding: 26px 12px;
+  }
+  .row-2 { display: flex; flex-wrap: wrap; gap: 16px; }
+  .row-2 > .card { flex: 1 1 280px; margin-bottom: 0; }
+  .present-row { color: var(--ink); }
+  .absent-row { color: var(--red); }
+  .ring-wrap { display: flex; justify-content: center; margin-bottom: 6px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 18px; }
+  .tab-btn { width: auto; flex: 1; background: #fff; color: var(--muted); border: 1px solid var(--border); }
+  .tab-btn.active { background: var(--ink); color: #fff; }
+  .list-row { padding: 10px 0; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .pill { display: inline-block; font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; margin-left: 8px; }
+  .subject-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .subject-chip { width: auto; padding: 7px 13px; font-size: 13px; background: #fff; color: var(--muted); border: 1px solid var(--border); }
+  .subject-chip.active { background: var(--ink); color: #fff; }
+  .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">Loading…</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDtuk2VwxGKLIrAiwjbOQOdpJUNHTLKH3I",
+  authDomain: "med225-attendance-taker.firebaseapp.com",
+  projectId: "med225-attendance-taker",
+  storageBucket: "med225-attendance-taker.firebasestorage.app",
+  messagingSenderId: "902738358816",
+  appId: "1:902738358816:web:8222ef35b98c4dcf9d8245"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+
+/* Lets the app keep working through a dropped connection: writes get
+   queued locally and sync automatically once the connection's back.
+   Fails quietly if two tabs are open at once, which is fine, it just
+   means only one tab gets the offline cache. */
+db.enablePersistence().catch((err) => {
+  console.warn("Offline persistence not enabled:", err.code);
+});
+
+const LAST_BLOCK_KEY = "last_block_v1"; // remembers the block so you only type it once per block
+const TOKEN_REFRESH_MS = 30000;
+const TOKEN_VALID_MS = 37000;
+
+/* Real identity now lives in Firebase Auth, not a shared password. Every
+   visitor (students included) gets signed in anonymously the moment they
+   open the page, which Firestore's rules can tell apart from a real
+   leader/doctor account. currentRole and currentName get filled in once
+   a real account signs in and we've looked up who they are. */
+let currentRole = null; // null (not staff) | "leader" | "doctor"
+let currentName = "";
+
+auth.onAuthStateChanged(async (user) => {
+  if (!user) {
+    auth.signInAnonymously().catch(() => {
+      document.getElementById("app").innerHTML =
+        `<div class="card"><p>Couldn't connect. Check your connection and reload the page.</p></div>`;
+    });
+    return;
+  }
+
+  if (user.isAnonymous) {
+    currentRole = null;
+    currentName = "";
+    renderScan();
+    return;
+  }
+
+  // A real account signed in, look up who they actually are before trusting them.
+  try {
+    const staffDoc = await db.collection("staff").doc(user.uid).get();
+    if (staffDoc.exists) {
+      currentRole = staffDoc.data().role;
+      currentName = staffDoc.data().name || user.email || "";
+      renderDashboard();
+    } else {
+      alert("This account isn't set up as staff yet. Ask Aseel to add it.");
+      await auth.signOut();
+    }
+  } catch (e) {
+    alert("Couldn't verify this account. Try again.");
+    await auth.signOut();
+  }
+});
+
+/* Every change that matters gets a line here: who did it, what they did,
+   when. Read back in Records under Activity Log. */
+async function logAudit(action, detail) {
+  try {
+    await db.collection("auditLog").add({
+      action,
+      detail: detail || "",
+      hostName: currentName,
+      timestamp: Date.now()
+    });
+  } catch (e) {
+    console.warn("Could not write audit log entry:", e);
+  }
+}
+
+function setFavicon(emoji) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="0.9em" font-size="90">${emoji}</text></svg>`;
+  const link = document.createElement("link");
+  link.rel = "icon";
+  link.href = "data:image/svg+xml," + encodeURIComponent(svg);
+  document.head.appendChild(link);
+}
+setFavicon("⚬");
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+/* Same subject always gets the same color, generated from its name,
+   so subjects stay visually consistent without having to assign colors
+   by hand. */
+function subjectHue(subject) {
+  let hash = 0;
+  const str = String(subject || "");
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash) % 360;
+}
+function subjectPillStyle(subject) {
+  const hue = subjectHue(subject);
+  return `background:hsl(${hue},60%,92%); color:hsl(${hue},55%,28%); border-color:hsl(${hue},45%,75%);`;
+}
+function subjectChipStyle(subject, isActive) {
+  const hue = subjectHue(subject);
+  return isActive
+    ? `background:hsl(${hue},55%,35%); color:#fff; border-color:hsl(${hue},55%,35%);`
+    : `background:hsl(${hue},60%,95%); color:hsl(${hue},50%,30%); border-color:hsl(${hue},45%,80%);`;
+}
+
+/* ---------------- Dot-ring progress visual ---------------- */
+
+function dotRingSVG(percent, size) {
+  size = size || 200;
+  const cx = size / 2, cy = size / 2;
+  const outerR = size * 0.46;
+  const innerR = size * 0.30;
+  let dots = "";
+  const ringCounts = [48, 40, 32];
+  const ringRadii = [outerR, outerR * 0.80, outerR * 0.60];
+  for (let r = 0; r < ringCounts.length; r++) {
+    const n = ringCounts[r], rad = ringRadii[r];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const x = cx + rad * Math.cos(a), y = cy + rad * Math.sin(a);
+      dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="1.4" fill="#D9D9D9" />`;
+    }
+  }
+  const n = 28;
+  const filled = Math.round((percent / 100) * n);
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (i / n) * Math.PI * 2;
+    const x = cx + innerR * Math.cos(a), y = cy + innerR * Math.sin(a);
+    const isFilled = i < filled;
+    dots += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${isFilled ? 4.2 : 3.4}" fill="${isFilled ? '#111111' : '#E0E0E0'}" />`;
+  }
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${dots}</svg>`;
+}
+
+function updateRing(present, total) {
+  const el = document.getElementById("ringBox");
+  if (!el) return;
+  const pct = total > 0 ? Math.min(100, (present / total) * 100) : 0;
+  el.innerHTML = dotRingSVG(pct, 180);
+}
+
+/* ---------------- Routing ---------------- */
+
+/* ---------------- Student check-in (default view) ---------------- */
+
+function renderScan() {
+  const app = document.getElementById("app");
+  app.classList.remove("wide");
+  app.innerHTML = `
+    <h1>Check in</h1>
+    <p class="sub">Type your student ID, then enter the code on the screen.</p>
+    <div class="card">
+      <label for="code">Code</label>
+      <input type="text" id="code" class="code-input" maxlength="8" autocomplete="off" placeholder="XXXXXX">
+      <label for="sid">Student ID</label>
+      <input type="text" id="sid" inputmode="numeric" placeholder="e.g. 24110582" autocomplete="off">
+      <button id="submitBtn">Check in</button>
+      <div id="result" style="margin-top:12px;"></div>
+      <p class="muted-small" style="margin-top:10px; text-align:center;">Only check in if you're actually here. Remember, checking in for someone who isn't in the room is an academic integrity issue.</p>
+    </div>
+    <div style="text-align:center; margin-top:18px;">
+      <button class="ghost small" id="loginLinkBtn">Staff login</button>
+    </div>
+    <p class="muted-small" style="text-align:center; margin-top:24px;">Made by Aseel Alghamdi</p>
+  `;
+
+  document.getElementById("loginLinkBtn").onclick = renderLogin;
+
+  document.getElementById("submitBtn").onclick = async () => {
+    const codeRaw = document.getElementById("code").value.trim().toUpperCase();
+    const sidRaw = document.getElementById("sid").value.trim();
+    const result = document.getElementById("result");
+
+    if (!codeRaw || !sidRaw) {
+      result.innerHTML = `<p class="status err">Enter your ID first, then the code on the screen.</p>`;
+      return;
+    }
+
+    let matchSnap;
+    try {
+      matchSnap = await db.collection("activeCodes").where("code", "==", codeRaw).limit(1).get();
+    } catch (e) {
+      result.innerHTML = `<p class="status err">Couldn't reach the server. Check your connection and try again.</p>`;
+      return;
+    }
+
+    const active = matchSnap.empty ? null : matchSnap.docs[0].data();
+    const now = Date.now();
+    const fresh = active && (now - active.issuedAt) < TOKEN_VALID_MS;
+    if (!fresh) {
+      result.innerHTML = `<p class="status err">That code's wrong or it expired. Check the screen and try again.</p>`;
+      return;
+    }
+
+    let rosterDoc, rosterData;
+    try {
+      rosterDoc = await db.collection("roster").doc(sidRaw).get();
+      rosterData = rosterDoc.exists ? rosterDoc.data() : null;
+    } catch (e) { rosterData = null; }
+    if (!rosterData) {
+      result.innerHTML = `<p class="status err">Can't find that ID on the roster. Double check the number.</p>`;
+      return;
+    }
+
+    const lectureId = active.lectureId;
+    const attId = lectureId + "__" + sidRaw;
+    let existingDoc;
+    try { existingDoc = await db.collection("attendance").doc(attId).get(); } catch (e) { existingDoc = null; }
+    if (existingDoc && existingDoc.exists) {
+      result.innerHTML = `<p class="status info">Already checked in, you're good, ${escapeHtml(rosterData.name || "")}.</p>`;
+      return;
+    }
+
+    try {
+      await db.collection("attendance").doc(attId).set({
+        studentId: sidRaw,
+        name: rosterData.name || "",
+        lectureId: lectureId,
+        timestamp: now
+      });
+      result.innerHTML = `<p class="status ok">You're in, ${escapeHtml(rosterData.name || "")}.</p>`;
+      document.getElementById("submitBtn").disabled = true;
+    } catch (e) {
+      if (e && e.code === "permission-denied") {
+        result.innerHTML = `<p class="status info">Already checked in, you're good, ${escapeHtml(rosterData.name || "")}.</p>`;
+        document.getElementById("submitBtn").disabled = true;
+      } else {
+        result.innerHTML = `<p class="status err">Couldn't save that. Check your connection and try again.</p>`;
+      }
+    }
+  };
+}
+
+/* ---------------- Login ---------------- */
+
+function renderLogin() {
+  const app = document.getElementById("app");
+  app.classList.remove("wide");
+  app.innerHTML = `
+    <h1>Staff login</h1>
+    <p class="sub">For class leaders and doctors, with your own account.</p>
+    <div class="card">
+      <label for="loginEmail">Email</label>
+      <input type="text" id="loginEmail" autocomplete="off">
+      <label for="loginPass">Password</label>
+      <input type="password" id="loginPass" autocomplete="off">
+      <button id="loginBtn">Log in</button>
+      <div id="loginError" style="margin-top:10px;"></div>
+    </div>
+    <div style="text-align:center;">
+      <button class="ghost small" id="backBtn">Back</button>
+    </div>
+    <p class="muted-small" style="text-align:center; margin-top:24px;">Made by Aseel Alghamdi</p>
+  `;
+
+  document.getElementById("backBtn").onclick = renderScan;
+  document.getElementById("loginBtn").onclick = async () => {
+    const email = document.getElementById("loginEmail").value.trim();
+    const pass = document.getElementById("loginPass").value;
+    const err = document.getElementById("loginError");
+    if (!email || !pass) { err.innerHTML = `<p class="status err">Enter both your email and password.</p>`; return; }
+    err.innerHTML = `<p class="status info">Signing in…</p>`;
+    try {
+      await auth.signInWithEmailAndPassword(email, pass);
+      // onAuthStateChanged picks it up from here and loads the dashboard.
+    } catch (e) {
+      err.innerHTML = `<p class="status err">Wrong email or password.</p>`;
+    }
+  };
+}
+
+/* ---------------- Dashboard shell + tabs ---------------- */
+
+let activeTab = "run";
+let runTimer = null;
+let runUnsub = null;
+let currentLectureId = null;
+
+function renderDashboard() {
+  const app = document.getElementById("app");
+  app.classList.add("wide");
+  const hostName = currentName;
+  const role = currentRole;
+
+  const logoutBtnHtml = `<button class="ghost small" id="logoutBtn">Log out</button>`;
+
+  if (role === "doctor") {
+    // Doctors only ever see Records and Statistics. No way to reach anything else.
+    app.innerHTML = `
+      <div class="top-bar">
+        <div>
+          <h1 style="margin-bottom:0;">Records</h1>
+          <p class="sub" style="margin-bottom:0;">Signed in as ${escapeHtml(hostName)}</p>
+        </div>
+        ${logoutBtnHtml}
+      </div>
+      <div class="tabs">
+        <button class="tab-btn" id="tabRecords">Records</button>
+        <button class="tab-btn" id="tabStats">Statistics</button>
+      </div>
+      <div id="tabBody"></div>
+    `;
+    document.getElementById("logoutBtn").onclick = async () => {
+      await auth.signOut();
+      // onAuthStateChanged drops back to an anonymous session and renders the check-in page.
+    };
+    document.getElementById("tabRecords").onclick = () => switchTab("records");
+    document.getElementById("tabStats").onclick = () => switchTab("stats");
+    if (activeTab !== "records" && activeTab !== "stats") activeTab = "records";
+    switchTab(activeTab);
+    return;
+  }
+
+  app.innerHTML = `
+    <div class="top-bar">
+      <div>
+        <h1 style="margin-bottom:0;">Attendance</h1>
+        <p class="sub" style="margin-bottom:0;">Signed in as ${escapeHtml(hostName)}</p>
+      </div>
+      ${logoutBtnHtml}
+    </div>
+    <div class="tabs">
+      <button class="tab-btn" id="tabRun">Run lecture</button>
+      <button class="tab-btn" id="tabRecords">Records</button>
+      <button class="tab-btn" id="tabStats">Statistics</button>
+      <button class="tab-btn" id="tabRoster">Roster</button>
+    </div>
+    <div id="tabBody"></div>
+  `;
+
+  document.getElementById("logoutBtn").onclick = async () => {
+    if (runTimer) clearInterval(runTimer);
+    if (runUnsub) runUnsub();
+    await auth.signOut();
+  };
+
+  document.getElementById("tabRun").onclick = () => switchTab("run");
+  document.getElementById("tabRecords").onclick = () => switchTab("records");
+  document.getElementById("tabStats").onclick = () => switchTab("stats");
+  document.getElementById("tabRoster").onclick = () => switchTab("roster");
+
+  switchTab(activeTab);
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  const setActive = (id, match) => { const el = document.getElementById(id); if (el) el.classList.toggle("active", tab === match); };
+  setActive("tabRun", "run");
+  setActive("tabRecords", "records");
+  setActive("tabStats", "stats");
+  setActive("tabRoster", "roster");
+
+  if (tab === "run") renderRunTab();
+  else if (tab === "records") renderRecordsTab();
+  else if (tab === "stats") renderStatisticsTab();
+  else renderRosterTab();
+}
+
+/* ---------------- Tab: Run lecture ---------------- */
+
+async function renderRunTab() {
+  const body = document.getElementById("tabBody");
+  const savedBlock = localStorage.getItem(LAST_BLOCK_KEY) || "";
+  body.innerHTML = `
+    <div class="card">
+      <label for="blockInput">Block</label>
+      <input type="text" id="blockInput" list="blockOptions" placeholder="e.g. Block 4" value="${escapeAttr(savedBlock)}">
+      <datalist id="blockOptions"></datalist>
+      <p class="muted-small" style="margin-top:-6px; margin-bottom:12px;">Set this once at the start of the block, it'll stay filled in for every lecture after.</p>
+      <label for="subjectInput">Subject</label>
+      <input type="text" id="subjectInput" list="subjectOptions" placeholder="e.g. Embryology">
+      <datalist id="subjectOptions"></datalist>
+      <label for="titleInput">Lecture title</label>
+      <input type="text" id="titleInput" placeholder="e.g. Lecture 5: Gas exchange">
+      <button id="startBtn">Start</button>
+    </div>
+
+    <div class="row-2">
+      <div class="card" id="qrCard" style="display:none;">
+        <div class="big-code" id="bigCode">······</div>
+        <p class="muted-small" id="tickInfo" style="text-align:center; margin-top:10px;">Refreshes every 30 seconds.</p>
+        <div id="qr-box" style="margin-top:14px;"><div id="qrcode"></div></div>
+      </div>
+
+      <div class="card" id="countCard" style="display:none;">
+        <div class="ring-wrap"><div id="ringBox"></div></div>
+        <div class="count" id="countNum">0</div>
+        <div class="count-label">checked in</div>
+        <button id="viewAttBtn" class="secondary" style="margin-top:14px;">See who's here</button>
+      </div>
+    </div>
+
+    <div class="card" id="attCard" style="display:none;">
+      <div id="attBody"></div>
+    </div>
+  `;
+
+  // Populate subject and block autocomplete from past lectures
+  try {
+    const snap = await db.collection("lectures").get();
+    const subjects = new Set();
+    const blocks = new Set();
+    snap.forEach(d => {
+      const data = d.data();
+      const s = (data.subject || "").trim(); if (s) subjects.add(s);
+      const b = (data.block || "").trim(); if (b) blocks.add(b);
+    });
+    document.getElementById("subjectOptions").innerHTML =
+      [...subjects].map(s => `<option value="${escapeAttr(s)}">`).join("");
+    document.getElementById("blockOptions").innerHTML =
+      [...blocks].map(b => `<option value="${escapeAttr(b)}">`).join("");
+  } catch (e) {}
+
+  document.getElementById("startBtn").onclick = async () => {
+    const block = document.getElementById("blockInput").value.trim();
+    const subject = document.getElementById("subjectInput").value.trim();
+    const title = document.getElementById("titleInput").value.trim();
+    if (!block || !subject || !title) { alert("Fill in the block, the subject, and the title."); return; }
+
+    const hostName = currentName;
+    let lectureRef;
+    try {
+      lectureRef = db.collection("lectures").doc();
+      await lectureRef.set({ block, subject, title, hostName, createdAt: Date.now() });
+    } catch (e) {
+      alert("Couldn't start the lecture. Check your connection.");
+      return;
+    }
+    currentLectureId = lectureRef.id;
+    localStorage.setItem(LAST_BLOCK_KEY, block);
+    logAudit("Started lecture", `"${title}" (${subject}, ${block})`);
+
+    document.getElementById("qrCard").style.display = "block";
+    document.getElementById("countCard").style.display = "block";
+
+    const qrBox = document.getElementById("qrcode");
+    qrBox.innerHTML = "";
+    new QRCode(qrBox, { text: location.origin + location.pathname, width: 170, height: 170 });
+
+    if (runTimer) clearInterval(runTimer);
+    pushNewCode(currentLectureId, subject, title);
+    runTimer = setInterval(() => pushNewCode(currentLectureId, subject, title), TOKEN_REFRESH_MS);
+
+    if (runUnsub) runUnsub();
+    runUnsub = watchCount(currentLectureId);
+
+    document.getElementById("viewAttBtn").onclick = () => showAttendance(currentLectureId, title);
+  };
+}
+
+/* Tick-box manual attendance, built from the absent list that's already
+   on screen, no typing required to find someone. A filter box is there
+   too, just to make a long absent list faster to scan. */
+function renderAbsentSection(absentList, headingSize) {
+  const hStyle = `margin-top:18px; color:var(--red); font-size:${headingSize || 18}px;`;
+  if (!absentList.length) {
+    return `<h2 style="${hStyle}">Absent (0)</h2><p class="muted-small">Everyone showed up.</p>`;
+  }
+  return `
+    <h2 style="${hStyle}">Absent (${absentList.length})</h2>
+    <p class="muted-small" style="margin-top:-6px; margin-bottom:10px;">Tick anyone who should be marked present, for example a late submission, then save.</p>
+    <input type="text" class="manual-filter" placeholder="Filter the list…">
+    <div class="manual-block">
+      <div class="manual-list" style="max-height:320px; overflow-y:auto; margin:10px 0;">
+        ${absentList.map(s => `
+          <label class="list-row manual-row" data-searchable="${escapeAttr((s.name + " " + s.id).toLowerCase())}" style="cursor:pointer;">
+            <span style="display:flex; align-items:center; gap:10px;">
+              <input type="checkbox" class="manual-check" data-id="${escapeAttr(s.id)}" data-name="${escapeAttr(s.name)}" style="width:auto; margin:0;">
+              <span class="absent-row" style="display:inline;">${escapeHtml(s.name)} <span class="muted-small">(${escapeHtml(s.id)})</span></span>
+            </span>
+          </label>
+        `).join("")}
+      </div>
+      <button class="manual-save secondary">Mark selected as present</button>
+      <div class="manual-status muted-small"></div>
+    </div>
+  `;
+}
+
+function wireManualSection(container, lectureId, lectureTitle, onSaved) {
+  const block = container.querySelector(".manual-block");
+  if (!block) return; // nothing to wire when the absent list was empty
+
+  const filterInput = container.querySelector(".manual-filter");
+  if (filterInput) filterInput.oninput = () => {
+    const q = filterInput.value.trim().toLowerCase();
+    block.querySelectorAll(".manual-row").forEach(row => {
+      row.style.display = row.dataset.searchable.includes(q) ? "" : "none";
+    });
+  };
+
+  block.querySelector(".manual-save").onclick = async () => {
+    const checks = [...block.querySelectorAll(".manual-check:checked")];
+    const status = block.querySelector(".manual-status");
+    if (!checks.length) { status.textContent = "Tick at least one student first."; return; }
+
+    status.textContent = "Saving…";
+    let saved = 0, skipped = 0;
+    const names = [];
+    for (const chk of checks) {
+      try {
+        await db.collection("attendance").doc(lectureId + "__" + chk.dataset.id).set({
+          studentId: chk.dataset.id,
+          name: chk.dataset.name,
+          lectureId: lectureId,
+          timestamp: Date.now(),
+          manual: true
+        });
+        saved++;
+        names.push(chk.dataset.name);
+      } catch (e) {
+        skipped++;
+      }
+    }
+    if (saved) {
+      logAudit("Manual check-in", `${names.join(", ")}${lectureTitle ? ` for "${lectureTitle}"` : ""}`);
+    }
+    status.textContent = `Marked ${saved} present${skipped ? `, ${skipped} couldn't be saved` : ""}.`;
+    if (onSaved) setTimeout(onSaved, 600);
+  };
+}
+
+function watchCount(lectureId) {
+  const countEl = document.getElementById("countNum");
+  return db.collection("attendance").where("lectureId", "==", lectureId)
+    .onSnapshot(async (snap) => {
+      countEl.textContent = snap.size;
+      try {
+        const rosterSnap = await db.collection("roster").get();
+        updateRing(snap.size, rosterSnap.size || 1);
+      } catch (e) {}
+    }, (err) => console.error("watch error", err));
+}
+
+const CODE_BLOCKLIST = [
+  "SEX","ASS","FUCK","CUNT","RAPE","GAY","FAG","SLUT","DAMN","HELL","CRAP",
+  "MILF","TWAT","SCUM","SMUT","LUST","NUDE","ANAL","ANUS","WANK","SUCK",
+  "TARD","PERV","DUMB","SLAG","WHOR","KKK","NAZI","JERK","PUKE"
+];
+
+function makeCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  for (let attempt = 0; attempt < 50; attempt++) {
+    let out = "";
+    for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
+    if (!CODE_BLOCKLIST.some(w => out.includes(w))) return out;
+  }
+  return "ATTEND";
+}
+
+async function pushNewCode(lectureId, subject, title) {
+  const code = makeCode();
+  const issuedAt = Date.now();
+  try {
+    // Each lecture gets its own doc here, so two lectures running at the
+    // same time (different rooms, different devices) never overwrite each
+    // other's code the way a single shared doc would.
+    await db.collection("activeCodes").doc(lectureId).set({ code, lectureId, subject, title, issuedAt });
+  } catch (e) {
+    const el = document.getElementById("tickInfo");
+    if (el) el.textContent = "Couldn't refresh the code. Check your connection.";
+    return;
+  }
+  const bc = document.getElementById("bigCode");
+  const ti = document.getElementById("tickInfo");
+  if (bc) bc.textContent = code;
+  if (ti) ti.textContent = "Updated " + new Date(issuedAt).toLocaleTimeString() + ". Refreshes every 30s";
+}
+
+/* ---------------- Shared attendance view ---------------- */
+
+async function showAttendance(lectureId, title) {
+  const card = document.getElementById("attCard");
+  const body = document.getElementById("attBody");
+  card.style.display = "block";
+  body.innerHTML = "<p>Loading…</p>";
+
+  let rosterSnap, attSnap;
+  try {
+    [rosterSnap, attSnap] = await Promise.all([
+      db.collection("roster").get(),
+      db.collection("attendance").where("lectureId", "==", lectureId).get()
+    ]);
+  } catch (e) {
+    body.innerHTML = `<p class="status err">Couldn't load this. Try again.</p>`;
+    return;
+  }
+
+  const presentIds = new Set();
+  const presentList = [];
+  attSnap.forEach(d => {
+    const data = d.data();
+    presentIds.add(data.studentId);
+    presentList.push({ id: data.studentId, name: data.name, timestamp: data.timestamp, manual: data.manual });
+  });
+
+  const absentList = [];
+  rosterSnap.forEach(d => {
+    if (!presentIds.has(d.id)) absentList.push({ id: d.id, name: (d.data() || {}).name || "" });
+  });
+
+  presentList.sort((a, b) => a.name.localeCompare(b.name));
+  absentList.sort((a, b) => a.name.localeCompare(b.name));
+  updateRing(presentList.length, rosterSnap.size || 1);
+
+  const presentRows = presentList.length
+    ? presentList.map(s => `<div class="present-row" style="padding:8px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between;">
+        <span>${escapeHtml(s.name)} <span class="muted-small">(${escapeHtml(s.id)})</span>${s.manual ? '<span class="pill">marked by hand</span>' : ''}</span>
+        <span class="muted-small">${s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : ""}</span>
+      </div>`).join("")
+    : `<p class="muted-small">No one's checked in yet.</p>`;
+
+  body.innerHTML = `
+    <p class="sub" style="margin-bottom:16px;">${escapeHtml(title)}: ${presentList.length} here, ${absentList.length} absent</p>
+    <h2>Here (${presentList.length})</h2>
+    ${presentRows}
+    ${renderAbsentSection(absentList, 18)}
+  `;
+  wireManualSection(body, lectureId, title, () => showAttendance(lectureId, title));
+}
+
+/* ---------------- Tab: Records ---------------- */
+
+let recordsSubjectFilter = "All";
+
+async function renderRecordsTab() {
+  const body = document.getElementById("tabBody");
+  body.innerHTML = `<p>Loading…</p>`;
+
+  let snap;
+  try {
+    snap = await db.collection("lectures").orderBy("createdAt", "desc").get({ source: "server" });
+  } catch (e) {
+    try {
+      snap = await db.collection("lectures").get({ source: "server" });
+    } catch (e2) {
+      body.innerHTML = `<p class="status err">Couldn't load records.</p>`;
+      return;
+    }
+  }
+
+  const lectures = [];
+  snap.forEach(d => lectures.push({ id: d.id, ...d.data() }));
+  lectures.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  const subjects = ["All", ...new Set(lectures.map(l => l.subject).filter(Boolean))];
+  const filtered = recordsSubjectFilter === "All" ? lectures : lectures.filter(l => l.subject === recordsSubjectFilter);
+
+  body.innerHTML = `
+    <div class="subject-filter" id="subjectFilterRow">
+      ${subjects.map(s => {
+        const isActive = s === recordsSubjectFilter;
+        const style = s === "All" ? "" : `style="${subjectChipStyle(s, isActive)}"`;
+        return `<button class="subject-chip ${isActive ? 'active' : ''}" data-subject="${escapeAttr(s)}" ${style}>${escapeHtml(s)}</button>`;
+      }).join("")}
+    </div>
+    <div id="lectureList">
+      ${filtered.length ? filtered.map(l => `
+        <div class="card">
+          <div class="list-row" style="border:none; padding:0;">
+            <div>
+              <div id="title-display-${l.id}">
+                <strong>${escapeHtml(l.title)}</strong>
+                <span class="pill" style="${subjectPillStyle(l.subject)}">${escapeHtml(l.subject || "")}</span>
+                ${l.block ? `<span class="pill">${escapeHtml(l.block)}</span>` : ''}
+              </div>
+              <div class="muted-small">${l.createdAt ? new Date(l.createdAt).toLocaleString() : ""}${l.hostName ? ", " + escapeHtml(l.hostName) : ""}</div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="small secondary" data-view="${l.id}">View</button>
+              ${currentRole === "leader" ? `<button class="small ghost" data-rename="${l.id}">Rename</button>` : ""}
+              ${currentRole === "leader" ? `<button class="small ghost" style="color:var(--red); border-color:var(--red);" data-delete="${l.id}">Delete</button>` : ""}
+            </div>
+          </div>
+          <div id="view-${l.id}" style="margin-top:14px; display:none;"></div>
+        </div>
+      `).join("") : `<p class="muted-small">No lectures recorded yet${recordsSubjectFilter !== "All" ? " for this subject" : ""}.</p>`}
+    </div>
+
+    <div class="card">
+      <div class="list-row" style="border:none; padding:0; cursor:pointer;" id="activityToggle">
+        <h2 style="margin-bottom:0;">Activity Log</h2>
+      </div>
+      <div id="activityBody" style="display:none; margin-top:12px;"><p class="muted-small">Not loaded yet, click above to load.</p></div>
+    </div>
+  `;
+
+  let activityLoaded = false;
+  document.getElementById("activityToggle").onclick = async () => {
+    const el = document.getElementById("activityBody");
+    const isOpen = el.style.display === "block";
+    el.style.display = isOpen ? "none" : "block";
+    if (!isOpen && !activityLoaded) {
+      activityLoaded = true;
+      await renderActivityLog(el);
+    }
+  };
+
+  document.querySelectorAll(".subject-chip").forEach(btn => {
+    btn.onclick = () => { recordsSubjectFilter = btn.dataset.subject; renderRecordsTab(); };
+  });
+
+  filtered.forEach(l => {
+    const viewBtn = document.querySelector(`button[data-view="${l.id}"]`);
+    const renameBtn = document.querySelector(`button[data-rename="${l.id}"]`);
+    const deleteBtn = document.querySelector(`button[data-delete="${l.id}"]`);
+
+    if (deleteBtn) deleteBtn.onclick = async () => {
+      let countText = "";
+      try {
+        const attSnap = await db.collection("attendance").where("lectureId", "==", l.id).get();
+        countText = ` and its ${attSnap.size} attendance record${attSnap.size === 1 ? "" : "s"}`;
+      } catch (e) {}
+
+      if (!confirm(`Delete "${l.title}"${countText}? This can't be undone.`)) return;
+
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = "Deleting…";
+      try {
+        const attSnap = await db.collection("attendance").where("lectureId", "==", l.id).get();
+        const batch = db.batch();
+        attSnap.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+
+        await db.collection("lectures").doc(l.id).delete();
+        await db.collection("activeCodes").doc(l.id).delete().catch(() => {});
+
+        logAudit("Deleted lecture", `"${l.title}" (${attSnap.size} attendance records)`);
+        renderRecordsTab();
+      } catch (e) {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = "Delete";
+        alert("Couldn't delete it. Check your connection and try again.");
+      }
+    };
+
+    viewBtn.onclick = async () => {
+      const panel = document.getElementById(`view-${l.id}`);
+      const isOpen = panel.style.display === "block";
+      panel.style.display = isOpen ? "none" : "block";
+      if (!isOpen) {
+        panel.innerHTML = "<p>Loading…</p>";
+        await showAttendanceInline(panel, l.id, l.title);
+      }
+    };
+
+    if (renameBtn) renameBtn.onclick = async () => {
+      const display = document.getElementById(`title-display-${l.id}`);
+      const newTitle = prompt("New title for this lecture:", l.title);
+      if (newTitle === null) return;
+      const trimmed = newTitle.trim();
+      if (!trimmed) return;
+      try {
+        await db.collection("lectures").doc(l.id).update({ title: trimmed });
+        display.innerHTML = `<strong>${escapeHtml(trimmed)}</strong> <span class="pill" style="${subjectPillStyle(l.subject)}">${escapeHtml(l.subject || "")}</span>`;
+        logAudit("Renamed lecture", `"${l.title}" to "${trimmed}"`);
+        l.title = trimmed;
+      } catch (e) {
+        alert("Couldn't rename it. Check your connection and try again.");
+      }
+    };
+  });
+}
+
+async function renderActivityLog(container) {
+  container.innerHTML = "<p>Loading…</p>";
+  let snap;
+  try {
+    snap = await db.collection("auditLog").orderBy("timestamp", "desc").limit(50).get();
+  } catch (e) {
+    try {
+      snap = await db.collection("auditLog").get();
+    } catch (e2) {
+      container.innerHTML = `<p class="status err">Couldn't load the activity log.</p>`;
+      return;
+    }
+  }
+  const rows = [];
+  snap.forEach(d => rows.push(d.data()));
+  rows.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+  container.innerHTML = rows.length
+    ? rows.slice(0, 50).map(r => `
+        <div class="list-row" style="padding:7px 0;">
+          <span>${escapeHtml(r.action)}: ${escapeHtml(r.detail || "")} <span class="muted-small">(${escapeHtml(r.hostName || "")})</span></span>
+          <span class="muted-small">${r.timestamp ? new Date(r.timestamp).toLocaleString() : ""}</span>
+        </div>
+      `).join("")
+    : `<p class="muted-small">Nothing logged yet.</p>`;
+}
+
+async function showAttendanceInline(panel, lectureId, title) {
+  let rosterSnap, attSnap;
+  try {
+    [rosterSnap, attSnap] = await Promise.all([
+      db.collection("roster").get(),
+      db.collection("attendance").where("lectureId", "==", lectureId).get()
+    ]);
+  } catch (e) {
+    panel.innerHTML = `<p class="status err">Couldn't load this.</p>`;
+    return;
+  }
+
+  const presentIds = new Set();
+  const presentList = [];
+  attSnap.forEach(d => {
+    const data = d.data();
+    presentIds.add(data.studentId);
+    presentList.push({ id: data.studentId, name: data.name, timestamp: data.timestamp, manual: data.manual });
+  });
+  const absentList = [];
+  rosterSnap.forEach(d => { if (!presentIds.has(d.id)) absentList.push({ id: d.id, name: (d.data() || {}).name || "" }); });
+  presentList.sort((a, b) => a.name.localeCompare(b.name));
+  absentList.sort((a, b) => a.name.localeCompare(b.name));
+
+  const presentRows = presentList.length
+    ? presentList.map(s => `<div class="present-row" style="padding:6px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between;">
+        <span>${escapeHtml(s.name)} <span class="muted-small">(${escapeHtml(s.id)})</span>${s.manual ? '<span class="pill">by hand</span>' : ''}</span>
+        <span class="muted-small">${s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : ""}</span>
+      </div>`).join("")
+    : `<p class="muted-small">No one checked in.</p>`;
+  panel.innerHTML = `
+    <p class="sub">${presentList.length} here, ${absentList.length} absent</p>
+    <h2 style="font-size:15px;">Here</h2>${presentRows}
+    ${renderAbsentSection(absentList, 15)}
+  `;
+  wireManualSection(panel, lectureId, title, () => showAttendanceInline(panel, lectureId, title));
+}
+
+/* ---------------- Tab: Statistics ---------------- */
+
+let statsSubject = "All";
+let statsBlock = "All";
+let statsChart = null;
+
+async function computeStats() {
+  // Forced to read straight from the server, not the local offline cache,
+  // since offline mode can otherwise serve a stale snapshot right after a
+  // lecture's been deleted elsewhere and make it look like it still counts.
+  const [lecturesSnap, rosterSnap, attSnap] = await Promise.all([
+    db.collection("lectures").get({ source: "server" }),
+    db.collection("roster").get({ source: "server" }),
+    db.collection("attendance").get({ source: "server" })
+  ]);
+
+  let lectures = [];
+  lecturesSnap.forEach(d => lectures.push({ id: d.id, ...d.data() }));
+  if (statsSubject !== "All") {
+    lectures = lectures.filter(l => l.subject === statsSubject);
+  } else {
+    // The default "All" view leaves out Test lectures, so test runs don't
+    // skew the real numbers. Pick "Test" as the subject filter directly if
+    // you ever want to see them.
+    lectures = lectures.filter(l => l.subject !== "Test");
+  }
+  if (statsBlock !== "All") lectures = lectures.filter(l => l.block === statsBlock);
+  lectures.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+
+  const roster = [];
+  rosterSnap.forEach(d => roster.push({ id: d.id, name: (d.data() || {}).name || "" }));
+
+  const lectureIds = new Set(lectures.map(l => l.id));
+  const presentByLecture = {}; // lectureId -> Set(studentId)
+  attSnap.forEach(d => {
+    const data = d.data();
+    if (!lectureIds.has(data.lectureId)) return;
+    if (!presentByLecture[data.lectureId]) presentByLecture[data.lectureId] = new Set();
+    presentByLecture[data.lectureId].add(data.studentId);
+  });
+
+  const trend = lectures.map(l => {
+    const presentSet = presentByLecture[l.id];
+    const count = presentSet ? presentSet.size : 0;
+    return {
+      label: l.title,
+      date: l.createdAt,
+      rate: roster.length ? Math.round((count / roster.length) * 100) : 0
+    };
+  });
+
+  const perStudent = roster.map(s => {
+    let attended = 0;
+    lectures.forEach(l => { if (presentByLecture[l.id] && presentByLecture[l.id].has(s.id)) attended++; });
+    return {
+      id: s.id, name: s.name, attended, total: lectures.length,
+      pct: lectures.length ? Math.round((attended / lectures.length) * 100) : 0
+    };
+  });
+  perStudent.sort((a, b) => a.pct - b.pct);
+
+  return { lectures, roster, trend, perStudent };
+}
+
+async function renderStatisticsTab() {
+  const body = document.getElementById("tabBody");
+  body.innerHTML = `<p>Loading…</p>`;
+
+  let lecturesSnap;
+  try {
+    lecturesSnap = await db.collection("lectures").get({ source: "server" });
+  } catch (e) {
+    body.innerHTML = `<p class="status err">Couldn't load statistics.</p>`;
+    return;
+  }
+  const allLectures = [];
+  lecturesSnap.forEach(d => allLectures.push(d.data()));
+  const subjects = ["All", ...new Set(allLectures.map(l => l.subject).filter(Boolean))];
+  const blocks = ["All", ...new Set(allLectures.map(l => l.block).filter(Boolean))];
+
+  body.innerHTML = `
+    <div class="card">
+      <label>Block</label>
+      <div class="subject-filter" id="blockFilterRow" style="margin-bottom:14px;">
+        ${blocks.map(b => `<button class="subject-chip ${b === statsBlock ? 'active' : ''}" data-block="${escapeAttr(b)}">${escapeHtml(b)}</button>`).join("")}
+      </div>
+      <label>Subject</label>
+      <div class="subject-filter" id="subjectFilterRow2" style="margin-bottom:0;">
+        ${subjects.map(s => {
+          const isActive = s === statsSubject;
+          const style = s === "All" ? "" : `style="${subjectChipStyle(s, isActive)}"`;
+          return `<button class="subject-chip ${isActive ? 'active' : ''}" data-subject="${escapeAttr(s)}" ${style}>${escapeHtml(s)}</button>`;
+        }).join("")}
+      </div>
+    </div>
+
+    <div class="card">
+      <button id="exportBtn" class="secondary">Export everything to Excel</button>
+      <p class="muted-small" style="margin-top:10px;">Every attendance record ever saved, plus a per-student summary, as one Excel file. Not filtered by the choices above, this always exports all of it.</p>
+      <div id="exportStatus" class="muted-small"></div>
+    </div>
+
+    <div class="card">
+      <button id="cleanupBtn" class="secondary">Clean up orphaned records</button>
+      <p class="muted-small" style="margin-top:10px;">Removes any attendance record left behind by a lecture that's since been deleted. Safe to run any time, it only touches records with no lecture to belong to.</p>
+      <div id="cleanupStatus" class="muted-small"></div>
+    </div>
+
+    <div class="card">
+      <h2>Attendance over time</h2>
+      <canvas id="trendChart" height="140"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Per student</h2>
+      <p class="muted-small" style="margin-top:-4px;">Lowest attendance first.</p>
+      <div id="statsTable"></div>
+    </div>
+  `;
+
+  document.querySelectorAll("#blockFilterRow .subject-chip").forEach(btn => {
+    btn.onclick = () => { statsBlock = btn.dataset.block; renderStatisticsTab(); };
+  });
+  document.querySelectorAll("#subjectFilterRow2 .subject-chip").forEach(btn => {
+    btn.onclick = () => { statsSubject = btn.dataset.subject; renderStatisticsTab(); };
+  });
+  document.getElementById("exportBtn").onclick = exportToExcel;
+  document.getElementById("cleanupBtn").onclick = cleanupOrphanedAttendance;
+
+  let lectures, trend, perStudent;
+  try {
+    ({ lectures, trend, perStudent } = await computeStats());
+  } catch (e) {
+    const msg = (e && e.code === "permission-denied")
+      ? "This account doesn't have permission to view statistics. Check that it's listed correctly in the staff collection."
+      : "Couldn't load the numbers. Check your connection and try again.";
+    document.getElementById("trendChart").closest(".card").innerHTML = `<p class="status err">${msg}</p>`;
+    document.getElementById("statsTable").closest(".card").innerHTML = `<p class="status err">${msg}</p>`;
+    return;
+  }
+
+  try {
+    if (typeof Chart === "undefined") {
+      throw new Error("Chart.js did not load");
+    }
+
+    const ctx = document.getElementById("trendChart");
+    if (statsChart) { statsChart.destroy(); statsChart = null; }
+    if (trend.length) {
+      statsChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: trend.map(t => t.label),
+          datasets: [{
+            label: "Attendance %",
+            data: trend.map(t => t.rate),
+            borderColor: "#111111",
+            backgroundColor: "rgba(17,17,17,0.08)",
+            pointBackgroundColor: "#111111",
+            tension: 0.25,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { min: 0, max: 100, ticks: { callback: v => v + "%" } } }
+        }
+      });
+    } else {
+      ctx.replaceWith(Object.assign(document.createElement("p"), { className: "muted-small", textContent: "No lectures yet for this filter." }));
+    }
+  } catch (e) {
+    document.getElementById("trendChart").closest(".card").innerHTML =
+      `<h2>Attendance over time</h2><p class="status err">Couldn't draw the chart (the chart library may not have loaded). Try reloading the page.</p>`;
+  }
+
+  try {
+    const tableEl = document.getElementById("statsTable");
+    tableEl.innerHTML = perStudent.length
+      ? perStudent.map(s => `
+          <div class="list-row">
+            <span>${escapeHtml(s.name)} <span class="muted-small">(${escapeHtml(s.id)})</span></span>
+            <span>${s.attended}/${s.total} <strong style="margin-left:6px; color:${s.pct < 70 ? 'var(--red)' : 'var(--ink)'}">${s.pct}%</strong></span>
+          </div>
+        `).join("")
+      : `<p class="muted-small">No data for this filter yet.</p>`;
+  } catch (e) {
+    document.getElementById("statsTable").innerHTML = `<p class="status err">Couldn't build the per-student table. Try reloading the page.</p>`;
+  }
+}
+
+async function cleanupOrphanedAttendance() {
+  const status = document.getElementById("cleanupStatus");
+  status.textContent = "Checking…";
+  try {
+    const [lecturesSnap, attSnap] = await Promise.all([
+      db.collection("lectures").get({ source: "server" }),
+      db.collection("attendance").get({ source: "server" })
+    ]);
+    const lectureIds = new Set();
+    lecturesSnap.forEach(d => lectureIds.add(d.id));
+
+    const orphans = [];
+    attSnap.forEach(d => {
+      const a = d.data();
+      if (a.lectureId && !lectureIds.has(a.lectureId)) orphans.push(d.ref);
+    });
+
+    if (!orphans.length) {
+      status.textContent = "Nothing to clean up, no orphaned records found.";
+      return;
+    }
+
+    if (!confirm(`Found ${orphans.length} attendance record(s) belonging to deleted lectures. Remove them permanently?`)) {
+      status.textContent = "";
+      return;
+    }
+
+    status.textContent = "Removing…";
+    const chunks = [];
+    for (let i = 0; i < orphans.length; i += 450) chunks.push(orphans.slice(i, i + 450));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(ref => batch.delete(ref));
+      await batch.commit();
+    }
+    logAudit("Cleaned up orphaned attendance", `${orphans.length} record(s) removed`);
+    status.textContent = `Removed ${orphans.length} orphaned record(s).`;
+  } catch (e) {
+    status.textContent = "Couldn't check or clean up. Check your connection and try again.";
+  }
+}
+
+async function exportToExcel() {
+  const status = document.getElementById("exportStatus");
+  status.textContent = "Building the file…";
+  try {
+    const [lecturesSnap, attSnap] = await Promise.all([
+      db.collection("lectures").get({ source: "server" }),
+      db.collection("attendance").get({ source: "server" })
+    ]);
+    const lectures = {};
+    lecturesSnap.forEach(d => lectures[d.id] = d.data());
+
+    const logRows = [["Date", "Time", "Block", "Subject", "Lecture", "Student ID", "Student Name", "Manual", "Format"]];
+    attSnap.forEach(d => {
+      const a = d.data();
+      const dt = a.timestamp ? new Date(a.timestamp) : null;
+      const lec = a.lectureId ? lectures[a.lectureId] : null;
+
+      if (lec) {
+        // Current-format record: a real lecture with a block and a subject.
+        logRows.push([
+          dt ? dt.toLocaleDateString() : "",
+          dt ? dt.toLocaleTimeString() : "",
+          lec.block || "",
+          lec.subject || "",
+          lec.title || "",
+          a.studentId || "",
+          a.name || "",
+          a.manual ? "Yes" : "No",
+          "Current"
+        ]);
+      } else if (!a.lectureId) {
+        // True old-format record, from before lectures had a stable ID at
+        // all (back when a lecture was just a typed name).
+        logRows.push([
+          dt ? dt.toLocaleDateString() : "",
+          dt ? dt.toLocaleTimeString() : "",
+          "",
+          "",
+          a.eventName || "(unknown lecture)",
+          a.studentId || "",
+          a.name || "",
+          a.manual ? "Yes" : "No",
+          "Old"
+        ]);
+      }
+      // else: this record has a lectureId, but that lecture no longer
+      // exists, meaning it was deleted. Leave it out of the export entirely.
+    });
+
+    const savedSubject = statsSubject, savedBlock = statsBlock;
+    statsSubject = "All"; statsBlock = "All";
+    const { perStudent } = await computeStats();
+    statsSubject = savedSubject; statsBlock = savedBlock;
+
+    const summaryRows = [["Student ID", "Name", "Attended", "Total Lectures", "Attendance %"]];
+    perStudent.forEach(s => summaryRows.push([s.id, s.name, s.attended, s.total, s.pct + "%"]));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(logRows), "Attendance Log");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), "Per-Student Summary");
+    XLSX.writeFile(wb, "attendance_export_" + new Date().toISOString().slice(0, 10) + ".xlsx");
+    status.textContent = "Downloaded.";
+    logAudit("Exported to Excel", `${attSnap.size} attendance records`);
+  } catch (e) {
+    status.textContent = "Couldn't build the export. Check your connection and try again.";
+  }
+}
+
+/* ---------------- Tab: Roster ---------------- */
+
+async function renderRosterTab() {
+  const body = document.getElementById("tabBody");
+  body.innerHTML = `
+    <div class="card">
+      <h2>Fix or add one student</h2>
+      <input type="text" id="editId" placeholder="Student ID">
+      <input type="text" id="editName" placeholder="Full Name">
+      <button id="editSaveBtn" class="secondary">Save</button>
+      <div id="editStatus" class="muted-small"></div>
+    </div>
+
+    <div class="card">
+      <h2>Search the roster</h2>
+      <input type="text" id="rosterSearch" placeholder="Type an ID or a name…">
+      <div id="rosterSearchResults" class="muted-small"></div>
+    </div>
+
+    <div class="card">
+      <h2>View the full roster</h2>
+      <button id="showFullRosterBtn" class="secondary">Show all students</button>
+      <input type="text" id="fullRosterFilter" placeholder="Filter the list…" style="display:none; margin-top:12px;">
+      <div id="fullRosterList" style="display:none; max-height:400px; overflow-y:auto; margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Replace the whole roster</h2>
+      <p class="muted-small" id="rosterStatus" style="margin:0 0 10px;">Checking…</p>
+      <label for="rosterFile">Upload a file (ID, Name columns)</label>
+      <input type="file" id="rosterFile" accept=".xlsx,.xls,.csv">
+      <button id="uploadBtn" class="secondary">Replace roster with this file</button>
+      <p class="muted-small" style="margin-top:10px;">This erases whatever's there first, then loads exactly what's in the file, every time, so nothing old is ever left behind.</p>
+      <div id="uploadStatus" class="muted-small"></div>
+    </div>
+  `;
+
+  checkRosterStatus();
+
+  document.getElementById("editSaveBtn").onclick = async () => {
+    const id = document.getElementById("editId").value.trim();
+    const name = document.getElementById("editName").value.trim();
+    const status = document.getElementById("editStatus");
+    if (!id || !name) { status.textContent = "Enter both the ID and the name."; return; }
+    status.textContent = "Saving…";
+    try {
+      await db.collection("roster").doc(id).set({ name });
+      status.textContent = `Saved. ${id} is now "${name}".`;
+      logAudit("Edited roster entry", `${id} set to "${name}"`);
+      document.getElementById("editId").value = "";
+      document.getElementById("editName").value = "";
+      checkRosterStatus();
+    } catch (e) {
+      status.textContent = "Couldn't save. Check your connection.";
+    }
+  };
+
+  let searchTimer = null;
+  document.getElementById("rosterSearch").oninput = (e) => {
+    clearTimeout(searchTimer);
+    const q = e.target.value.trim().toLowerCase();
+    const results = document.getElementById("rosterSearchResults");
+    if (!q) { results.innerHTML = ""; return; }
+    searchTimer = setTimeout(async () => {
+      results.textContent = "Searching…";
+      try {
+        const snap = await db.collection("roster").get();
+        const matches = [];
+        snap.forEach(d => {
+          const name = (d.data().name || "");
+          if (d.id.toLowerCase().includes(q) || name.toLowerCase().includes(q)) matches.push({ id: d.id, name });
+        });
+        results.innerHTML = matches.length
+          ? matches.slice(0, 15).map(m => `<div class="list-row" style="padding:6px 0;">
+              <span>${escapeHtml(m.name)} <span class="muted-small">(${escapeHtml(m.id)})</span></span>
+              <button class="small ghost" data-remove="${escapeAttr(m.id)}" data-removename="${escapeAttr(m.name)}">Remove</button>
+            </div>`).join("")
+          : "No matches.";
+        wireRosterRemoveButtons(results);
+      } catch (e) {
+        results.textContent = "Couldn't search right now.";
+      }
+    }, 300);
+  };
+
+  document.getElementById("uploadBtn").onclick = handleUpload;
+
+  document.getElementById("showFullRosterBtn").onclick = async () => {
+    const btn = document.getElementById("showFullRosterBtn");
+    const filterInput = document.getElementById("fullRosterFilter");
+    const listEl = document.getElementById("fullRosterList");
+    btn.textContent = "Loading…";
+    try {
+      const snap = await db.collection("roster").get();
+      const all = [];
+      snap.forEach(d => all.push({ id: d.id, name: (d.data() || {}).name || "" }));
+      all.sort((a, b) => a.name.localeCompare(b.name));
+
+      listEl.innerHTML = all.length
+        ? all.map(s => `<div class="list-row full-roster-row" data-searchable="${escapeAttr((s.name + " " + s.id).toLowerCase())}" style="padding:6px 0;">
+            <span>${escapeHtml(s.name)} <span class="muted-small">(${escapeHtml(s.id)})</span></span>
+            <button class="small ghost" data-remove="${escapeAttr(s.id)}" data-removename="${escapeAttr(s.name)}">Remove</button>
+          </div>`).join("")
+        : `<p class="muted-small">Roster is empty.</p>`;
+      wireRosterRemoveButtons(listEl);
+
+      btn.style.display = "none";
+      filterInput.style.display = "";
+      listEl.style.display = "";
+      filterInput.oninput = () => {
+        const q = filterInput.value.trim().toLowerCase();
+        listEl.querySelectorAll(".full-roster-row").forEach(row => {
+          row.style.display = row.dataset.searchable.includes(q) ? "" : "none";
+        });
+      };
+    } catch (e) {
+      btn.textContent = "Couldn't load, try again";
+    }
+  };
+}
+
+function wireRosterRemoveButtons(container) {
+  container.querySelectorAll("button[data-remove]").forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`Remove ${btn.dataset.removename} (${btn.dataset.remove}) from the roster?`)) return;
+      btn.disabled = true;
+      btn.textContent = "Removing…";
+      try {
+        await db.collection("roster").doc(btn.dataset.remove).delete();
+        logAudit("Removed from roster", `${btn.dataset.removename} (${btn.dataset.remove})`);
+        btn.closest(".list-row").remove();
+      } catch (e) {
+        btn.textContent = "Couldn't remove";
+      }
+    };
+  });
+}
+
+async function checkRosterStatus() {
+  const el = document.getElementById("rosterStatus");
+  if (!el) return;
+  try {
+    const snap = await db.collection("roster").get();
+    el.textContent = snap.empty ? "Roster is empty. Upload a file below." : `${snap.size} students loaded.`;
+  } catch (e) {
+    el.textContent = "Couldn't check the roster. Check your Firebase setup.";
+  }
+}
+
+async function wipeCollection(name) {
+  let snap = await db.collection(name).get();
+  while (!snap.empty) {
+    const batch = db.batch();
+    snap.docs.slice(0, 450).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    snap = await db.collection(name).get();
+  }
+}
+
+function handleUpload() {
+  const fileInput = document.getElementById("rosterFile");
+  const status = document.getElementById("uploadStatus");
+  if (!fileInput.files.length) { status.textContent = "Choose a file first."; return; }
+  if (!confirm("This erases the current roster, then loads exactly what's in this file. Continue?")) return;
+
+  status.textContent = "Reading file…";
+  const file = fileInput.files[0];
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+      if (!rows.length) { status.textContent = "That file looks empty."; return; }
+
+      let startRow = 0;
+      const first = rows[0].map(c => String(c).toLowerCase());
+      if (first.some(c => c.includes("id")) || first.some(c => c.includes("name"))) startRow = 1;
+
+      const pairs = [];
+      for (let i = startRow; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length === 0) continue;
+        const id = String(row[0] || "").trim();
+        const name = String(row[1] || "").trim();
+        if (!id) continue;
+        pairs.push([id, name]);
+      }
+      if (!pairs.length) { status.textContent = "No ID/Name rows found."; return; }
+
+      status.textContent = "Erasing current roster…";
+      await wipeCollection("roster");
+
+      status.textContent = "Loading the new roster…";
+      const chunks = [];
+      for (let i = 0; i < pairs.length; i += 450) chunks.push(pairs.slice(i, i + 450));
+      for (const chunk of chunks) {
+        const batch = db.batch();
+        chunk.forEach(([id, name]) => batch.set(db.collection("roster").doc(id), { name }));
+        await batch.commit();
+      }
+      status.textContent = `Done. ${pairs.length} students loaded.`;
+      logAudit("Replaced whole roster", `${pairs.length} students loaded from file`);
+      checkRosterStatus();
+    } catch (err) {
+      status.textContent = "Couldn't read that file. Make sure it's a valid Excel or CSV.";
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+</script>
+</body>
+</html>
