@@ -965,31 +965,61 @@ function renderTrendSVG(trend, rosterSize) {
     gridLines += `<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" font-size="11" fill="#8A8A8A" text-anchor="end">${val}</text>`;
   }
 
-  // If the same date shows up more than once (a few lectures can easily
-  // land on one day), add the time too so each point still reads as its
-  // own distinct lecture instead of looking like a duplicate.
-  const plainDateStrs = points.map(p => p.t.date ? new Date(p.t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "");
-  const dateCounts = {};
-  plainDateStrs.forEach(d => { dateCounts[d] = (dateCounts[d] || 0) + 1; });
+  // Round each lecture's time to the nearest half hour, roughly, this
+  // isn't meant to be exact, just enough to group same-day lectures
+  // sensibly instead of showing every odd minute.
+  function roundToHalfHour(dateVal) {
+    const d = new Date(dateVal);
+    const mins = d.getMinutes();
+    const rounded = mins < 15 ? 0 : (mins < 45 ? 30 : 60);
+    d.setSeconds(0, 0);
+    d.setMinutes(rounded);
+    return d;
+  }
+
+  const pointMeta = points.map(p => {
+    if (!p.t.date) return { dateStr: "", timeStr: "", key: "" };
+    const rd = roundToHalfHour(p.t.date);
+    const dateStr = rd.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const timeStr = rd.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return { dateStr, timeStr, key: dateStr + " " + timeStr };
+  });
+
+  // Group lecture names that round to the same day and half-hour slot,
+  // so hovering any one of them shows the full group, whether that's
+  // just the one lecture or a few that landed close together.
+  const groupedTitles = {};
+  pointMeta.forEach((m, i) => {
+    if (!groupedTitles[m.key]) groupedTitles[m.key] = [];
+    groupedTitles[m.key].push(points[i].t.label || "Untitled");
+  });
 
   const colWidth = trend.length > 1 ? stepX : plotW;
   let labels = "";
   let dots = "";
   let hoverZones = "";
+  let lastDateShown = null;
   points.forEach((p, i) => {
-    const plainDate = plainDateStrs[i];
-    const dateStr = dateCounts[plainDate] > 1 && p.t.date
-      ? `${plainDate}, ${new Date(p.t.date).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`
-      : plainDate;
-    const fullTitle = p.t.label || "";
-    const tooltipText = fullTitle ? `${fullTitle}, ${dateStr}, ${p.t.count} present` : dateStr;
+    const meta = pointMeta[i];
 
-    labels += `<text x="${p.x.toFixed(1)}" y="${h - 44}" font-size="12" font-weight="600" fill="#111111" text-anchor="middle">${escapeHtml(dateStr)}</text>`;
+    // The date itself only appears once, the first time it comes up,
+    // not repeated under every single point that shares it.
+    if (meta.dateStr !== lastDateShown) {
+      labels += `<text x="${p.x.toFixed(1)}" y="${h - 44}" font-size="12" font-weight="600" fill="#111111" text-anchor="middle">${escapeHtml(meta.dateStr)}</text>`;
+      lastDateShown = meta.dateStr;
+    }
+    labels += `<text x="${p.x.toFixed(1)}" y="${h - 28}" font-size="11" fill="#8A8A8A" text-anchor="middle">${escapeHtml(meta.timeStr)}</text>`;
+
     dots += `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="#111111"/>`;
 
+    const group = groupedTitles[meta.key] || [p.t.label || ""];
+    const tooltipText = group.length > 1
+      ? `${group.join(", ")} (around ${meta.dateStr}, ${meta.timeStr}), ${p.t.count} present`
+      : `${p.t.label || ""}, ${meta.dateStr} ${meta.timeStr}, ${p.t.count} present`;
+
     // An invisible wider rectangle over each point's whole column, so
-    // hovering anywhere near a point (not just the tiny dot) shows its
-    // full lecture name as a native browser tooltip.
+    // hovering anywhere near a point (not just the tiny dot) shows the
+    // tooltip.
     hoverZones += `<rect x="${(p.x - colWidth / 2).toFixed(1)}" y="${padT}" width="${colWidth.toFixed(1)}" height="${plotH}" fill="transparent" style="cursor:default;"><title>${escapeHtml(tooltipText)}</title></rect>`;
   });
 
