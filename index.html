@@ -591,11 +591,23 @@ function beginLiveSession(lectureId, subject, title) {
 /* Tick-box manual attendance, built from the absent list that's already
    on screen, no typing required to find someone. A filter box is there
    too, just to make a long absent list faster to scan. */
-function renderAbsentSection(absentList, headingSize) {
+function renderAbsentSection(absentList, headingSize, showManualControls) {
+  if (showManualControls === undefined) showManualControls = true;
   const hStyle = `margin-top:18px; color:var(--red); font-size:${headingSize || 18}px;`;
   if (!absentList.length) {
     return `<h2 style="${hStyle}">Absent (0)</h2><p class="muted-small">Everyone showed up.</p>`;
   }
+
+  if (!showManualControls) {
+    // A plain, read-only list, no checkboxes, no way to mark anyone
+    // present from here, used for the live view while a lecture is
+    // actually running.
+    return `
+      <h2 style="${hStyle}">Absent (${absentList.length})</h2>
+      ${absentList.map(s => `<div class="absent-row" style="padding:6px 0; border-bottom:1px solid var(--border);">${escapeHtml(s.name)} <span class="muted-small">(${escapeHtml(s.id)})</span></div>`).join("")}
+    `;
+  }
+
   return `
     <h2 style="${hStyle}">Absent (${absentList.length})</h2>
     <input type="text" class="manual-filter" placeholder="Filter the list…">
@@ -756,24 +768,12 @@ async function showAttendance(lectureId, title) {
         </div>`).join("")
       : `<p class="muted-small">No one's checked in yet.</p>`;
 
-    // Keep whatever's currently typed in the filter box instead of
-    // wiping it out every time a new check-in comes in live.
-    const existingFilter = body.querySelector(".manual-filter");
-    const filterValue = existingFilter ? existingFilter.value : "";
-
     body.innerHTML = `
       <p class="sub" style="margin-bottom:16px;">${escapeHtml(title)}: ${presentList.length} here, ${absentList.length} absent</p>
       <h2>Here (${presentList.length})</h2>
       ${presentRows}
-      ${renderAbsentSection(absentList, 18)}
+      ${renderAbsentSection(absentList, 18, false)}
     `;
-    wireManualSection(body, lectureId, title, null);
-
-    const newFilter = body.querySelector(".manual-filter");
-    if (newFilter && filterValue) {
-      newFilter.value = filterValue;
-      newFilter.dispatchEvent(new Event("input"));
-    }
   };
 
   attendanceUnsub = db.collection("attendance").where("lectureId", "==", lectureId)
